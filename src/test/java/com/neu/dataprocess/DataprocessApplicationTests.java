@@ -18,6 +18,13 @@ public class DataprocessApplicationTests {
     public void ESClient() throws IOException {
         ElasticsearchService service = new ElasticsearchServiceImpl();
         service.getAllHosts();
+        service.diskCheck();
+    }
+    @Test
+    public void testAvailable() throws IOException {
+        ElasticsearchService service = new ElasticsearchServiceImpl();
+        service.getAllHosts();
+        service.availableCheck();
     }
 
 

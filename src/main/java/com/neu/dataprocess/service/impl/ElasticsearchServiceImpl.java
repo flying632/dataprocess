@@ -13,12 +13,12 @@ import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
-import org.elasticsearch.index.query.MatchAllQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.*;
 import org.elasticsearch.search.aggregations.Aggregation;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregatorFactory;
 import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsAggregationBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.springframework.boot.jackson.JsonObjectDeserializer;
@@ -30,13 +30,13 @@ import java.util.Map;
 
 /**
  * @author fengyuluo
- * @createTime 10:20 2019/4/23
+ * @createtime 10:20 2019/4/23
  */
 public class ElasticsearchServiceImpl implements ElasticsearchService {
     private RestHighLevelClient client = ClientUtil.getClient();
+    private ArrayList<Host> hostArrayList = new ArrayList<>();
     @Override
     public ArrayList<Host> getAllHosts() throws IOException {
-        MatchAllQueryBuilder qb = QueryBuilders.matchAllQuery();
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(0);
@@ -50,7 +50,6 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         SearchResponse searchResponse = client.search(searchRequest);
 
         //解析返回值
-        ArrayList<Host> hostArrayList = new ArrayList<>();
         String stringResponse = searchResponse.toString();
         JSONObject jsonObject = JSONObject.parseObject(stringResponse);
         JSONObject aggregations = (JSONObject)jsonObject.get("aggregations");
@@ -74,17 +73,158 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
     @Override
-    public boolean diskIOCheck() {
-        return false;
+    public void diskCheck() throws IOException {
+        SearchRequest searchRequest = new SearchRequest();
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        for (Host host : hostArrayList) {
+            diskCheckCore(host.getName());
+        }
+
+
+    }
+    private void diskCheckCore(String hostname) throws IOException {
+        SearchRequest searchRequest = new SearchRequest();
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        //15分钟之内
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("@timestamp");
+//        rangeQueryBuilder.gte("now-1m");
+        rangeQueryBuilder.lte("now");
+        //硬盘容量占用在90%以上
+        RangeQueryBuilder diskRange = QueryBuilders.rangeQuery("system.filesystem.used.pct");
+        diskRange.gte(0);
+        diskRange.lt(90);
+        //主机名
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("host.name",hostname);
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+        boolQueryBuilder.must(rangeQueryBuilder);
+        boolQueryBuilder.must(termQueryBuilder);
+        boolQueryBuilder.filter(diskRange);
+
+        //根据硬盘分区不同聚合
+        TermsAggregationBuilder termsAggregationBuilder = AggregationBuilders.terms("diskUsed").field("system.filesystem.device_name");
+
+        searchSourceBuilder.size(0);
+        searchSourceBuilder.query(boolQueryBuilder);
+        searchSourceBuilder.aggregation(termsAggregationBuilder);
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse searchResponse = client.search(searchRequest);
+        JSONObject jsonResponse = JSONObject.parseObject(searchResponse.toString());
+        JSONObject jsonAggregation = (JSONObject)jsonResponse.get("aggregations");
+        JSONObject jsonfileUsed = (JSONObject)jsonAggregation.get("sterms#diskUsed");
+        JSONArray jsonbuckets = jsonfileUsed.getJSONArray("buckets");
+        if (jsonbuckets.size() != 0) {
+            for (Object item : jsonbuckets) {
+                JSONObject jsonItem = (JSONObject)item;
+                String device_name = (String)jsonItem.get("key");
+                //TODO  告警推送
+                System.out.println(hostname+":"+device_name+"的DISK占用比高于90%");
+            }
+        }
     }
 
     @Override
-    public boolean memoryCheck() {
-        return false;
+    public void cpuCheck() throws IOException {
+        for (Host host : hostArrayList) {
+            boolean result = cpuCheckCore(host.getName());
+            //TODO  告警推送
+            if (result)
+                 System.out.println(host.getName()+"的CPU负载过高");
+        }
+    }
+
+    private boolean cpuCheckCore(String hostname) throws IOException {
+        SearchRequest searchRequest = new SearchRequest();
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        //15分钟之内
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("@timestamp");
+        rangeQueryBuilder.gte("now-15m");
+        rangeQueryBuilder.lte("now");
+        //cpu负载在95%以上
+        RangeQueryBuilder cpuRange = QueryBuilders.rangeQuery("system.cpu.total.pct");
+        cpuRange.lt(95);
+        //主机名
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("host.name",hostname);
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+        boolQueryBuilder.must(rangeQueryBuilder);
+        boolQueryBuilder.must(termQueryBuilder);
+        boolQueryBuilder.filter(cpuRange);
+
+        searchSourceBuilder.query(boolQueryBuilder);
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse searchResponse = client.search(searchRequest);
+        long totalHits = searchResponse.getHits().totalHits;
+        if (totalHits == 0)
+            return true;
+        else
+            return false;
     }
 
     @Override
-    public boolean avaliableCheck() {
-        return false;
+    public void memoryCheck() throws IOException {
+        for (Host host : hostArrayList) {
+            boolean result = memoryCheckCore(host.getName());
+            //TODO  告警推送
+            if (result)
+                System.out.println(host.getName()+"的内存负载过高");
+        }
+
+    }
+    private boolean memoryCheckCore(String hostname) throws IOException {
+        SearchRequest searchRequest = new SearchRequest();
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        //15分钟之内
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("@timestamp");
+        rangeQueryBuilder.gte("now-15m");
+        rangeQueryBuilder.lte("now");
+        //内存负载在95%以上
+        RangeQueryBuilder memoryRange = QueryBuilders.rangeQuery("system.memory.used.pct");
+        memoryRange.lt(95);
+        //主机名
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("host.name",hostname);
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+        boolQueryBuilder.must(rangeQueryBuilder);
+        boolQueryBuilder.must(termQueryBuilder);
+        boolQueryBuilder.filter(memoryRange);
+
+        searchSourceBuilder.query(boolQueryBuilder);
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse searchResponse = client.search(searchRequest);
+        long totalHits = searchResponse.getHits().totalHits;
+        if (totalHits == 0)
+            return true;
+        else
+            return false;
+    }
+
+    @Override
+    public void availableCheck() throws IOException {
+        for (Host host : hostArrayList) {
+            boolean result = availableCheckCore(host.getName());
+            if (!result) {
+                System.out.println(host.getName()+"失联");
+            }
+        }
+
+    }
+    private boolean availableCheckCore(String hostname) throws IOException {
+        SearchRequest searchRequest = new SearchRequest();
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+        boolQueryBuilder.must(QueryBuilders.termQuery("host.name",hostname));
+        boolQueryBuilder.filter(QueryBuilders.rangeQuery("@timestamp").gt("now-1m"));
+        searchSourceBuilder.query(boolQueryBuilder);
+        searchSourceBuilder.fetchSource(false);
+        searchRequest.source(searchSourceBuilder);
+
+        SearchResponse searchResponse = client.search(searchRequest);
+        long totalHits = searchResponse.getHits().totalHits;
+        if (totalHits == 0) {
+            return false;
+        } else {
+            return true;
+        }
     }
 }
