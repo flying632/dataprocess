@@ -3,30 +3,25 @@ package com.neu.dataprocess.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.TypeReference;
 import com.neu.dataprocess.entity.Host;
 import com.neu.dataprocess.service.ElasticsearchService;
 import com.neu.dataprocess.util.ClientUtil;
+import com.neu.dataprocess.util.MailUtil;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.common.xcontent.ToXContent;
-import org.elasticsearch.common.xcontent.XContentBuilder;
-import org.elasticsearch.common.xcontent.XContentFactory;
-import org.elasticsearch.index.query.*;
-import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.RangeQueryBuilder;
+import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
-import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
-import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregatorFactory;
 import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsAggregationBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.springframework.boot.jackson.JsonObjectDeserializer;
 
+import javax.mail.MessagingException;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.Map;
 
 /**
  * @author fengyuluo
@@ -35,6 +30,7 @@ import java.util.Map;
 public class ElasticsearchServiceImpl implements ElasticsearchService {
     private RestHighLevelClient client = ClientUtil.getClient();
     private ArrayList<Host> hostArrayList = new ArrayList<>();
+    String to = "ba_632@163.com";
     @Override
     public ArrayList<Host> getAllHosts() throws IOException {
         SearchRequest searchRequest = new SearchRequest();
@@ -73,16 +69,14 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
     @Override
-    public void diskCheck() throws IOException {
+    public void diskCheck() throws IOException, MessagingException {
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         for (Host host : hostArrayList) {
             diskCheckCore(host.getName());
         }
-
-
     }
-    private void diskCheckCore(String hostname) throws IOException {
+    private void diskCheckCore(String hostname) throws IOException, MessagingException {
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         //15分钟之内
@@ -117,19 +111,22 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             for (Object item : jsonbuckets) {
                 JSONObject jsonItem = (JSONObject)item;
                 String device_name = (String)jsonItem.get("key");
-                //TODO  告警推送
-                System.out.println(hostname+":"+device_name+"的DISK占用比高于90%");
+                //告警推送
+                MailUtil.sendMail(to,"硬盘容量告警",device_name+"的DISK占用比高于90%");
+//                System.out.println(hostname+":"+device_name+"的DISK占用比高于90%");
             }
         }
     }
 
     @Override
-    public void cpuCheck() throws IOException {
+    public void cpuCheck() throws IOException, MessagingException {
         for (Host host : hostArrayList) {
             boolean result = cpuCheckCore(host.getName());
-            //TODO  告警推送
-            if (result)
-                 System.out.println(host.getName()+"的CPU负载过高");
+            //告警推送
+            if (result){
+                MailUtil.sendMail(to,"CPU负载告警",host.getName()+"的CPU负载过高");
+//                System.out.println(host.getName()+"的CPU负载过高");
+            }
         }
     }
 
@@ -162,12 +159,14 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
     @Override
-    public void memoryCheck() throws IOException {
+    public void memoryCheck() throws IOException, MessagingException {
         for (Host host : hostArrayList) {
             boolean result = memoryCheckCore(host.getName());
-            //TODO  告警推送
-            if (result)
-                System.out.println(host.getName()+"的内存负载过高");
+            //告警推送
+            if (result){
+                MailUtil.sendMail(to,"内存负载告警",host.getName()+"的内存负载过高");
+//                System.out.println(host.getName()+"的内存负载过高");
+            }
         }
 
     }
@@ -200,11 +199,12 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
     @Override
-    public void availableCheck() throws IOException {
+    public void availableCheck() throws IOException, MessagingException {
         for (Host host : hostArrayList) {
             boolean result = availableCheckCore(host.getName());
             if (!result) {
-                System.out.println(host.getName()+"失联");
+                MailUtil.sendMail(to,"连接状态",host.getName()+"失联");
+//                System.out.println(host.getName()+"失联");
             }
         }
 
