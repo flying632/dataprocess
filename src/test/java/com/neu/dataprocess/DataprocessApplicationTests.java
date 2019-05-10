@@ -4,6 +4,7 @@ import com.neu.dataprocess.service.ElasticsearchService;
 import com.neu.dataprocess.service.impl.ElasticsearchServiceImpl;
 import com.neu.dataprocess.task.QuartzJdbc;
 import com.neu.dataprocess.util.ClientUtil;
+import com.neu.dataprocess.util.Consumer;
 import com.neu.dataprocess.util.MailUtil;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -39,6 +40,11 @@ public class DataprocessApplicationTests {
     @Test
     public void schedulerTest() {
         QuartzJdbc.startSchedule();
+    }
+    @Test
+    public void testConsumer() {
+        Consumer consumer = new Consumer();
+        consumer.consumeKafka();
     }
 
 }

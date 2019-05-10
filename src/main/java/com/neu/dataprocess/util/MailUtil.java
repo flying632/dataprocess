@@ -1,6 +1,6 @@
 package com.neu.dataprocess.util;
 
-import com.neu.dataprocess.entity.MailConfig;
+import com.neu.dataprocess.config.MailConfig;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 

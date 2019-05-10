@@ -1,4 +1,4 @@
-package com.neu.dataprocess.entity;
+package com.neu.dataprocess.config;
 
 import java.io.IOException;
 import java.io.InputStream;
