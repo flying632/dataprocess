@@ -16,7 +16,7 @@ import org.apache.spark.streaming.kafka010.{ConsumerStrategies, KafkaUtils, Loca
 
 case class Message(timestamp: String, source: String, date:String, host: String, serviceName: String, log: String)
 
-object KafkaUtil {
+object KafkaToESUtil {
   val kafkaServer : String = "58.87.124.238:9092"
 
   def main(args: Array[String]): Unit = {
@@ -41,7 +41,6 @@ object KafkaUtil {
         props.asInstanceOf[java.util.Map[String,Object]]
       )
     )
-    println("*** begin")
     kafkaStream.foreachRDD(r => {
 
       val ESRdd = r.map(x=>{
