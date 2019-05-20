@@ -26,4 +26,7 @@ public interface ElasticsearchService {
     //检查可用性
     void availableCheck() throws IOException, MessagingException;
 
+    //检查所有的检查项
+    void checkAll() throws  IOException,MessagingException;
+
 }

@@ -37,7 +37,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(0);
         TermsAggregationBuilder aggregationBuilder = AggregationBuilders.terms("hosts")
-                .field("beat.hostname");
+                .field("host.name");
         TopHitsAggregationBuilder subAggregation = AggregationBuilders.topHits("hostInfo").size(1);
         aggregationBuilder.subAggregation(subAggregation);
         searchSourceBuilder.aggregation(aggregationBuilder);
@@ -80,11 +80,11 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         //15分钟之内
-        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("@timestamp");
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("timestamp");
 //        rangeQueryBuilder.gte("now-1m");
         rangeQueryBuilder.lte("now");
         //硬盘容量占用在90%以上
-        RangeQueryBuilder diskRange = QueryBuilders.rangeQuery("system.filesystem.used.pct");
+        RangeQueryBuilder diskRange = QueryBuilders.rangeQuery("filesystem.usedPct");
         diskRange.gte(0);
         diskRange.lt(90);
         //主机名
@@ -134,11 +134,11 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         //15分钟之内
-        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("@timestamp");
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("timestamp");
         rangeQueryBuilder.gte("now-15m");
         rangeQueryBuilder.lte("now");
         //cpu负载在95%以上
-        RangeQueryBuilder cpuRange = QueryBuilders.rangeQuery("system.cpu.total.pct");
+        RangeQueryBuilder cpuRange = QueryBuilders.rangeQuery("cpu.totalPct");
         cpuRange.lt(95);
         //主机名
         TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("host.name",hostname);
@@ -174,11 +174,11 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         //15分钟之内
-        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("@timestamp");
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("timestamp");
         rangeQueryBuilder.gte("now-15m");
         rangeQueryBuilder.lte("now");
         //内存负载在95%以上
-        RangeQueryBuilder memoryRange = QueryBuilders.rangeQuery("system.memory.used.pct");
+        RangeQueryBuilder memoryRange = QueryBuilders.rangeQuery("memory.usedPct");
         memoryRange.lt(95);
         //主机名
         TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("host.name",hostname);
@@ -209,12 +209,13 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         }
 
     }
+
     private boolean availableCheckCore(String hostname) throws IOException {
         SearchRequest searchRequest = new SearchRequest();
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
         boolQueryBuilder.must(QueryBuilders.termQuery("host.name",hostname));
-        boolQueryBuilder.filter(QueryBuilders.rangeQuery("@timestamp").gt("now-1m"));
+        boolQueryBuilder.filter(QueryBuilders.rangeQuery("timestamp").gt("now-1m"));
         searchSourceBuilder.query(boolQueryBuilder);
         searchSourceBuilder.fetchSource(false);
         searchRequest.source(searchSourceBuilder);
@@ -227,4 +228,34 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             return true;
         }
     }
+
+    @Override
+    public void checkAll() throws IOException, MessagingException {
+        hostArrayList = getAllHosts();
+        for (Host host : hostArrayList) {
+            boolean result = availableCheckCore(host.getName());
+            if (!result) {
+                MailUtil.sendMail(to,"连接状态",host.getName()+"失联");
+//                System.out.println(host.getName()+"失联");
+            }
+            result = memoryCheckCore(host.getName());
+            //内存告警
+            if (result){
+                MailUtil.sendMail(to,"内存负载告警",host.getName()+"的内存负载过高");
+//                System.out.println(host.getName()+"的内存负载过高");
+            }
+
+            result = cpuCheckCore(host.getName());
+            //cpu告警推送
+            if (result){
+                MailUtil.sendMail(to,"CPU负载告警",host.getName()+"的CPU负载过高");
+//                System.out.println(host.getName()+"的CPU负载过高");
+            }
+            //硬盘检测
+            diskCheckCore(host.getName());
+
+
+        }
+    }
+
 }
